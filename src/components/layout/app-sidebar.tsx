@@ -25,6 +25,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '../ui/button';
 import { auth } from '@/lib/firebase';
 import { Skeleton } from '../ui/skeleton';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { cn } from '@/lib/utils';
 
 const menuItems = [
   {
@@ -44,9 +46,36 @@ const menuItems = [
   },
 ];
 
+function BottomNavBar() {
+  const pathname = usePathname();
+  return (
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t md:hidden">
+      <div className="flex justify-around h-16">
+        {menuItems.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={cn(
+              'flex flex-col items-center justify-center w-full text-sm font-medium transition-colors',
+              pathname.startsWith(item.href)
+                ? 'text-primary'
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            )}
+          >
+            <item.icon className="h-6 w-6 mb-1" />
+            <span>{item.label}</span>
+          </Link>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+
 export function AppSidebar() {
   const pathname = usePathname();
   const { trakdUser, loading } = useAuth();
+  const isMobile = useIsMobile();
 
   const getAvatarFallback = (name: string | null | undefined) => {
     if (!name) return 'U';
@@ -56,6 +85,10 @@ export function AppSidebar() {
     }
     return name.substring(0, 2);
   };
+
+  if (isMobile) {
+    return <BottomNavBar />;
+  }
 
   return (
     <>
@@ -69,7 +102,7 @@ export function AppSidebar() {
         <SidebarMenu>
           {menuItems.map((item) => (
             <SidebarMenuItem key={item.href}>
-              <Link href={item.href} passHref>
+              <Link href={item.href}>
                 <SidebarMenuButton
                   isActive={pathname.startsWith(item.href)}
                   tooltip={{

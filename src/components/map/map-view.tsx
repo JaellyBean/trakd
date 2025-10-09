@@ -48,7 +48,7 @@ const MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID';
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
 export function MapView() {
-  const { trakdUser } = useAuth();
+  const { user, trakdUser } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [members, setMembers] = useState<TrakdUser[]>([]);
@@ -77,6 +77,7 @@ export function MapView() {
   useEffect(() => {
     if (!trakdUser?.uid) return;
 
+    setIsLoading(true);
     const q = query(
       collection(db, 'groups'),
       where('members', 'array-contains', trakdUser.uid)
@@ -90,6 +91,9 @@ export function MapView() {
         setSelectedGroupId(userGroups[0].id);
       }
       setIsLoading(false);
+    }, (error) => {
+        console.error("Error fetching groups: ", error);
+        setIsLoading(false);
     });
     return () => unsubscribe();
   }, [trakdUser?.uid, selectedGroupId]);
@@ -97,13 +101,13 @@ export function MapView() {
   // Fetch members of selected group
   useEffect(() => {
     if (!selectedGroupId) {
-      setMembers([]);
+      setMembers(trakdUser ? [trakdUser] : []);
       return;
     };
 
     const group = groups.find(g => g.id === selectedGroupId);
     if (!group || group.members.length === 0) {
-        setMembers([]);
+        setMembers(trakdUser ? [trakdUser] : []);
         return;
     }
 
@@ -119,7 +123,7 @@ export function MapView() {
     });
 
     return () => unsubscribe();
-  }, [selectedGroupId, groups]);
+  }, [selectedGroupId, groups, trakdUser]);
 
   // Update user location and battery
   useEffect(() => {
@@ -220,7 +224,7 @@ export function MapView() {
   };
 
 
-  if (isLoading) {
+  if (!user) {
     return (
       <div className="flex h-full w-full items-center justify-center">
         <LoaderCircle className="h-8 w-8 animate-spin text-primary" />
@@ -228,17 +232,17 @@ export function MapView() {
     );
   }
 
-  if (groups.length === 0) {
+  if (isLoading) {
     return (
-      <div className="flex flex-col h-full w-full items-center justify-center text-center p-4">
-        <Users className="w-12 h-12 text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold">No Groups Yet</h2>
-        <p className="text-muted-foreground">
-          Create or join a group to start sharing your location.
-        </p>
+        <div className="relative h-full w-full">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
+                <LoaderCircle className="h-8 w-8 animate-spin text-primary" />
+            </div>
+            <div className="h-full w-full bg-muted blur-sm"></div>
       </div>
     );
   }
+
 
   return (
     <div className="relative h-full w-full">
@@ -267,30 +271,46 @@ export function MapView() {
         </Map>
       </APIProvider>
       <div className="absolute top-4 left-4 flex gap-4">
-        <Select
-          value={selectedGroupId || ''}
-          onValueChange={(val) => setSelectedGroupId(val)}
-        >
-          <SelectTrigger className="w-[200px] bg-background/80 backdrop-blur-sm shadow-lg">
-            <SelectValue placeholder="Select a group" />
-          </SelectTrigger>
-          <SelectContent>
-            {groups.map((group) => (
-              <SelectItem key={group.id} value={group.id}>
-                {group.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button onClick={handleSmartReminder} disabled={isAiLoading} variant="outline" className="bg-background/80 backdrop-blur-sm shadow-lg">
-          {isAiLoading ? (
-            <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Sparkles className="mr-2 h-4 w-4 text-primary" />
-          )}
-          Smart Reminder
-        </Button>
+        {groups.length > 0 && (
+            <Select
+            value={selectedGroupId || ''}
+            onValueChange={(val) => setSelectedGroupId(val)}
+            >
+            <SelectTrigger className="w-[200px] bg-background/80 backdrop-blur-sm shadow-lg">
+                <SelectValue placeholder="Select a group" />
+            </SelectTrigger>
+            <SelectContent>
+                {groups.map((group) => (
+                <SelectItem key={group.id} value={group.id}>
+                    {group.name}
+                </SelectItem>
+                ))}
+            </SelectContent>
+            </Select>
+        )}
+        {selectedGroupId && (
+            <Button onClick={handleSmartReminder} disabled={isAiLoading} variant="outline" className="bg-background/80 backdrop-blur-sm shadow-lg">
+            {isAiLoading ? (
+                <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+                <Sparkles className="mr-2 h-4 w-4 text-primary" />
+            )}
+            Smart Reminder
+            </Button>
+        )}
       </div>
+
+      {groups.length === 0 && !isLoading && (
+        <div className="absolute top-4 left-4 right-4">
+            <div className="bg-background/80 backdrop-blur-sm shadow-lg rounded-lg p-4 text-center">
+                <Users className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                <h2 className="text-lg font-semibold">No Groups Yet</h2>
+                <p className="text-muted-foreground text-sm">
+                Create or join a group to see others on the map.
+                </p>
+            </div>
+        </div>
+      )}
 
       <AlertDialog open={!!aiReminder} onOpenChange={(open) => !open && setAiReminder(null)}>
         <AlertDialogContent>

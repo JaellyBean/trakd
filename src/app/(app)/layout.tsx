@@ -11,7 +11,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Sidebar>
         <AppSidebar />
       </Sidebar>
-      <SidebarInset>{children}</SidebarInset>
+      <SidebarInset className="pb-16 md:pb-0">{children}</SidebarInset>
     </SidebarProvider>
   );
 }

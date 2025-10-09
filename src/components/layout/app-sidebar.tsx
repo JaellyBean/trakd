@@ -69,9 +69,10 @@ export function AppSidebar() {
         <SidebarMenu>
           {menuItems.map((item) => (
             <SidebarMenuItem key={item.href}>
-              <Link href={item.href} passHref legacyBehavior>
+              <Link href={item.href} passHref>
                 <SidebarMenuButton
                   as="a"
+                  href={item.href}
                   isActive={pathname.startsWith(item.href)}
                   tooltip={{
                     children: item.label,

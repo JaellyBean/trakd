@@ -15,8 +15,8 @@ import {
   deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
-import { auth, db } from './lib/firebase';
-import type { Group } from './lib/types';
+import { auth, db } from '@/lib/firebase';
+import type { Group } from '@/lib/types';
 import { updateProfile } from 'firebase/auth';
 
 // Helper to generate a unique invite code

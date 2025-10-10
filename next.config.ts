@@ -34,6 +34,21 @@ const nextConfig: NextConfig = {
     'https://*.cloudworkstations.dev',
     'https://*.firebase.studio',
   ],
+  async headers() {
+    return [
+      {
+        source: '/:all*(svg|jpg|jpeg|png|gif|ico|css|js|woff|woff2|ttf|otf|mp4|webm)',
+        locale: false,
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, must-revalidate',
+          },
+        ],
+      },
+    ];
+  },
+  reactStrictMode: true,
 };
 
 export default nextConfig;

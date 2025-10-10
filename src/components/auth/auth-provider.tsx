@@ -19,8 +19,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
-      setLoading(false);
+      if (firebaseUser) {
+        setUser(firebaseUser);
+      } else {
+        setUser(null);
+        setTrakdUser(null);
+        setLoading(false);
+      }
     });
 
     return () => unsubscribe();
@@ -34,10 +39,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           setTrakdUser(null);
         }
+        setLoading(false);
       });
       return () => unsub();
-    } else {
-      setTrakdUser(null);
     }
   }, [user]);
 

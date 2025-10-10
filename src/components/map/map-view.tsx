@@ -4,6 +4,7 @@ import {
   APIProvider,
   Map,
   AdvancedMarker,
+  useMap,
 } from '@vis.gl/react-google-maps';
 import {
   collection,
@@ -14,8 +15,8 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { LoaderCircle, Sparkles, Users, MapPinOff } from 'lucide-react';
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { LoaderCircle, Sparkles, Users, MapPinOff, MapPin } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
 
 import {
   smartLocationSharingReminder,
@@ -43,20 +44,73 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID';
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
+function MapContainer() {
+  const map = useMap();
+  const { trakdUser, loading } = useAuth();
+  const [locationPermission, setLocationPermission] =
+    useState<PermissionState>('prompt');
+
+  useEffect(() => {
+    navigator.permissions
+      .query({ name: 'geolocation' })
+      .then((permissionStatus) => {
+        setLocationPermission(permissionStatus.state);
+        permissionStatus.onchange = () => {
+          setLocationPermission(permissionStatus.state);
+        };
+      });
+  }, []);
+
+  useEffect(() => {
+    if (map && trakdUser?.location && locationPermission === 'granted') {
+      map.moveCamera({
+        center: {
+          lat: trakdUser.location.latitude,
+          lng: trakdUser.location.longitude,
+        },
+        zoom: 15,
+      });
+    }
+  }, [map, trakdUser?.location, locationPermission]);
+
+  const defaultCenter = useMemo(() => {
+    if (trakdUser?.location && locationPermission === 'granted') {
+      return {
+        lat: trakdUser.location.latitude,
+        lng: trakdUser.location.longitude,
+      };
+    }
+    return { lat: 37.7749, lng: -122.4194 }; // Default to SF
+  }, [trakdUser, locationPermission]);
+
+  return (
+    <Map
+      defaultCenter={defaultCenter}
+      defaultZoom={13}
+      gestureHandling={'greedy'}
+      disableDefaultUI={true}
+      mapId={MAP_ID}
+    />
+  );
+}
+
 export function MapView() {
-  const { user, trakdUser } = useAuth();
+  const { user, trakdUser, loading } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
-  const [selectedGroupId, setSelectedGroupId] = useState<string | 'none'>('none');
+  const [selectedGroupId, setSelectedGroupId] = useState<string | 'none'>(
+    'none'
+  );
   const [members, setMembers] = useState<TrakdUser[]>([]);
   const [isGroupsLoading, setIsGroupsLoading] = useState(true);
   const { toast } = useToast();
-  
-  const [locationPermission, setLocationPermission] = useState<PermissionState>('prompt');
 
+  const [locationPermission, setLocationPermission] =
+    useState<PermissionState>('prompt');
 
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiReminder, setAiReminder] = useState<string | null>(null);
@@ -65,89 +119,100 @@ export function MapView() {
     () => groups.find((g) => g.id === selectedGroupId),
     [groups, selectedGroupId]
   );
-  
-  const mapCenter = useMemo(() => {
-    if (trakdUser?.location && locationPermission === 'granted') {
-        return { lat: trakdUser.location.latitude, lng: trakdUser.location.longitude };
-    }
-    // Default to San Francisco if no user location is available
-    return { lat: 37.7749, lng: -122.4194 }; 
-  }, [trakdUser, locationPermission]);
-  
-  const handlePermission = useCallback(() => {
-    navigator.permissions.query({ name: 'geolocation' }).then((result) => {
-      setLocationPermission(result.state);
-      result.onchange = () => {
-        setLocationPermission(result.state);
-      };
-    });
-  }, []);
 
   useEffect(() => {
-    handlePermission();
-  }, [handlePermission]);
+    navigator.permissions
+      .query({ name: 'geolocation' })
+      .then((permissionStatus) => {
+        setLocationPermission(permissionStatus.state);
+        permissionStatus.onchange = () => {
+          setLocationPermission(permissionStatus.state);
+        };
+      });
+  }, []);
+
+  const handleAllowLocation = () => {
+    navigator.geolocation.getCurrentPosition(
+      () => {
+        setLocationPermission('granted');
+      },
+      (error) => {
+        if (error.code === error.PERMISSION_DENIED) {
+          setLocationPermission('denied');
+        }
+      }
+    );
+  };
 
   // Fetch user's groups
   useEffect(() => {
     if (!trakdUser?.uid) {
-        setIsGroupsLoading(false);
-        setMembers(trakdUser ? [trakdUser] : []);
-        return;
-    };
+      setIsGroupsLoading(false);
+      setMembers(trakdUser ? [trakdUser] : []);
+      return;
+    }
 
     setIsGroupsLoading(true);
     const q = query(
       collection(db, 'groups'),
       where('members', 'array-contains', trakdUser.uid)
     );
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const userGroups = querySnapshot.docs.map(
-        (doc) => ({ id: doc.id, ...doc.data() } as Group)
-      );
-      setGroups(userGroups);
-      if (userGroups.length > 0 && selectedGroupId === 'none') {
-        setSelectedGroupId(userGroups[0].id);
-      }
-      setIsGroupsLoading(false);
-    }, (error) => {
-        console.error("Error fetching groups: ", error);
+    const unsubscribe = onSnapshot(
+      q,
+      (querySnapshot) => {
+        const userGroups = querySnapshot.docs.map(
+          (doc) => ({ id: doc.id, ...doc.data() } as Group)
+        );
+        setGroups(userGroups);
+        if (userGroups.length > 0 && selectedGroupId === 'none') {
+          setSelectedGroupId(userGroups[0].id);
+        }
+        setIsGroupsLoading(false);
+      },
+      (error) => {
+        console.error('Error fetching groups: ', error);
         setMembers(trakdUser ? [trakdUser] : []);
         setIsGroupsLoading(false);
-    });
+      }
+    );
     return () => unsubscribe();
   }, [trakdUser, selectedGroupId]);
 
   // Fetch members of selected group or just the user
   useEffect(() => {
     if (!trakdUser) {
-        setMembers([]);
-        return;
+      setMembers([]);
+      return;
     }
 
     if (!selectedGroupId || selectedGroupId === 'none') {
       if (trakdUser) setMembers([trakdUser]);
       return;
-    };
+    }
 
-    const group = groups.find(g => g.id === selectedGroupId);
+    const group = groups.find((g) => g.id === selectedGroupId);
     if (!group || group.members.length === 0) {
-        if (trakdUser) setMembers([trakdUser]);
-        return;
+      if (trakdUser) setMembers([trakdUser]);
+      return;
     }
 
     const q = query(
       collection(db, 'users'),
       where('__name__', 'in', group.members)
     );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const groupMembers = snapshot.docs.map(
-        (doc) => doc.data() as TrakdUser
-      );
-      setMembers(groupMembers);
-    }, (error) => {
-        console.error("Error fetching group members:", error);
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const groupMembers = snapshot.docs.map(
+          (doc) => doc.data() as TrakdUser
+        );
+        setMembers(groupMembers);
+      },
+      (error) => {
+        console.error('Error fetching group members:', error);
         if (trakdUser) setMembers([trakdUser]); // Fallback to just showing the current user
-    });
+      }
+    );
 
     return () => unsubscribe();
   }, [selectedGroupId, groups, trakdUser]);
@@ -167,24 +232,29 @@ export function MapView() {
     };
 
     const handleError = (error: GeolocationPositionError) => {
-        console.warn(`ERROR(${error.code}): ${error.message}`);
-        if(error.code === 1) { // PERMISSION_DENIED
-            setLocationPermission('denied');
-        }
-    }
+      console.warn(`ERROR(${error.code}): ${error.message}`);
+      if (error.code === 1) {
+        // PERMISSION_DENIED
+        setLocationPermission('denied');
+      }
+    };
 
-    const watchId = navigator.geolocation.watchPosition(updateLocation, handleError, {
-      enableHighAccuracy: true,
-      timeout: 5000,
-      maximumAge: 0,
-    });
-    
+    const watchId = navigator.geolocation.watchPosition(
+      updateLocation,
+      handleError,
+      {
+        enableHighAccuracy: true,
+        timeout: 5000,
+        maximumAge: 0,
+      }
+    );
+
     const updateBattery = (battery: any) => {
-        updateDoc(userDocRef, {
-            'battery.level': battery.level,
-            'battery.charging': battery.charging,
-        });
-    }
+      updateDoc(userDocRef, {
+        'battery.level': battery.level,
+        'battery.charging': battery.charging,
+      });
+    };
 
     let batteryInterval: NodeJS.Timeout;
 
@@ -210,10 +280,12 @@ export function MapView() {
     }
     setIsAiLoading(true);
     try {
-      const membersWithLocation = members.filter(m => m.location);
+      const membersWithLocation = members.filter((m) => m.location);
       if (membersWithLocation.length < 2) {
-         setAiReminder('Not enough members are sharing their location to determine if they are together.');
-         return;
+        setAiReminder(
+          'Not enough members are sharing their location to determine if they are together.'
+        );
+        return;
       }
 
       let togetherCount = 0;
@@ -225,22 +297,22 @@ export function MapView() {
             membersWithLocation[j].location!.latitude,
             membersWithLocation[j].location!.longitude
           );
-          if (dist < 500) { // within 500 meters
+          if (dist < 500) {
+            // within 500 meters
             togetherCount++;
           }
         }
       }
 
-      const areMembersTogether = togetherCount > (membersWithLocation.length / 2);
+      const areMembersTogether = togetherCount > membersWithLocation.length / 2;
 
       const result = await smartLocationSharingReminder({
         groupName: selectedGroup.name,
-        memberNames: members.map(m => m.displayName || 'A member'),
+        memberNames: members.map((m) => m.displayName || 'A member'),
         areMembersTogether,
       });
-      
-      setAiReminder(result.reminderMessage);
 
+      setAiReminder(result.reminderMessage);
     } catch (error) {
       console.error('AI reminder failed:', error);
       toast({
@@ -253,11 +325,14 @@ export function MapView() {
     }
   };
 
-
-  if (!user || !trakdUser) {
+  if (loading) {
     return (
-      <div className="flex h-full w-full items-center justify-center">
-        <LoaderCircle className="h-8 w-8 animate-spin text-primary" />
+      <div className="relative h-full w-full">
+        <Skeleton className="h-full w-full" />
+        <div className="absolute top-4 left-4 flex gap-4">
+          <Skeleton className="h-10 w-[200px]" />
+          <Skeleton className="h-10 w-[160px]" />
+        </div>
       </div>
     );
   }
@@ -265,15 +340,9 @@ export function MapView() {
   return (
     <div className="relative h-full w-full">
       <APIProvider apiKey={API_KEY}>
-        <Map
-          defaultCenter={mapCenter}
-          center={mapCenter}
-          defaultZoom={13}
-          gestureHandling={'greedy'}
-          disableDefaultUI={true}
-          mapId={MAP_ID}
-        >
-          {locationPermission === 'granted' && members
+        <MapContainer />
+        {locationPermission === 'granted' &&
+          members
             .filter((member) => member.location)
             .map((member) => (
               <AdvancedMarker
@@ -283,84 +352,116 @@ export function MapView() {
                   lng: member.location!.longitude,
                 }}
               >
-                <MemberMarker member={member} isCurrentUser={member.uid === trakdUser?.uid}/>
+                <MemberMarker
+                  member={member}
+                  isCurrentUser={member.uid === trakdUser?.uid}
+                />
               </AdvancedMarker>
             ))}
-        </Map>
       </APIProvider>
       <div className="absolute top-4 left-4 flex gap-4">
         {isGroupsLoading ? (
-             <div className="w-[200px] h-10 bg-background/80 backdrop-blur-sm shadow-lg rounded-md flex items-center justify-center">
-                <LoaderCircle className="w-5 h-5 animate-spin" />
-             </div>
-        ) : groups.length > 0 && (
+          <div className="flex h-10 w-[200px] items-center justify-center rounded-md bg-background/80 shadow-lg backdrop-blur-sm">
+            <LoaderCircle className="h-5 w-5 animate-spin" />
+          </div>
+        ) : (
+          groups.length > 0 && (
             <Select
-            value={selectedGroupId || ''}
-            onValueChange={(val) => setSelectedGroupId(val)}
+              value={selectedGroupId || ''}
+              onValueChange={(val) => setSelectedGroupId(val)}
             >
-            <SelectTrigger className="w-[200px] bg-background/80 backdrop-blur-sm shadow-lg">
+              <SelectTrigger className="w-[200px] bg-background/80 shadow-lg backdrop-blur-sm">
                 <SelectValue placeholder="Select a group" />
-            </SelectTrigger>
-            <SelectContent>
+              </SelectTrigger>
+              <SelectContent>
                 {groups.map((group) => (
-                <SelectItem key={group.id} value={group.id}>
+                  <SelectItem key={group.id} value={group.id}>
                     {group.name}
-                </SelectItem>
+                  </SelectItem>
                 ))}
-            </SelectContent>
+              </SelectContent>
             </Select>
+          )
         )}
-        {selectedGroupId && selectedGroupId !== 'none' && (
-            <Button onClick={handleSmartReminder} disabled={isAiLoading} variant="outline" className="bg-background/80 backdrop-blur-sm shadow-lg">
-            {isAiLoading ? (
+        {selectedGroupId &&
+          selectedGroupId !== 'none' &&
+          locationPermission === 'granted' && (
+            <Button
+              onClick={handleSmartReminder}
+              disabled={isAiLoading}
+              variant="outline"
+              className="bg-background/80 shadow-lg backdrop-blur-sm"
+            >
+              {isAiLoading ? (
                 <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
+              ) : (
                 <Sparkles className="mr-2 h-4 w-4 text-primary" />
-            )}
-            Smart Reminder
+              )}
+              Smart Reminder
             </Button>
-        )}
+          )}
       </div>
 
       {!isGroupsLoading && groups.length === 0 && (
         <div className="absolute top-4 left-4 right-4">
-            <div className="bg-background/80 backdrop-blur-sm shadow-lg rounded-lg p-4 text-center">
-                <Users className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                <h2 className="text-lg font-semibold">No Groups Yet</h2>
-                <p className="text-muted-foreground text-sm">
-                Create or join a group to see others on the map.
-                </p>
-            </div>
-        </div>
-      )}
-      
-      {locationPermission === 'denied' && (
-         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-            <div className="bg-background/80 backdrop-blur-sm shadow-lg rounded-lg p-6 text-center max-w-sm">
-                <MapPinOff className="w-12 h-12 text-destructive mx-auto mb-4" />
-                <h2 className="text-xl font-semibold">Location Access Denied</h2>
-                <p className="text-muted-foreground text-sm mt-2">
-                Trak'd needs access to your location to show you on the map. Please enable location services for this site in your browser settings.
-                </p>
-            </div>
+          <div className="rounded-lg bg-background/80 p-4 text-center shadow-lg backdrop-blur-sm">
+            <Users className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
+            <h2 className="text-lg font-semibold">No Groups Yet</h2>
+            <p className="text-sm text-muted-foreground">
+              Create or join a group to see others on the map.
+            </p>
+          </div>
         </div>
       )}
 
-      <AlertDialog open={!!aiReminder} onOpenChange={(open) => !open && setAiReminder(null)}>
+      {locationPermission === 'prompt' && (
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+          <div className="max-w-sm rounded-lg bg-background/80 p-6 text-center shadow-lg backdrop-blur-sm">
+            <MapPin className="mx-auto mb-4 h-12 w-12 text-primary" />
+            <h2 className="text-xl font-semibold">Enable Location</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Trak'd needs access to your location to show you on the map.
+              Click the button to allow location access.
+            </p>
+            <Button onClick={handleAllowLocation} className="mt-4">
+              Allow Access
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {locationPermission === 'denied' && (
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+          <div className="max-w-sm rounded-lg bg-background/80 p-6 text-center shadow-lg backdrop-blur-sm">
+            <MapPinOff className="mx-auto mb-4 h-12 w-12 text-destructive" />
+            <h2 className="text-xl font-semibold">Location Access Denied</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Trak'd needs access to your location to show you on the map.
+              Please enable location services for this site in your browser
+              settings.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <AlertDialog
+        open={!!aiReminder}
+        onOpenChange={(open) => !open && setAiReminder(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2"><Sparkles className="text-primary w-5 h-5"/> AI Assistant</AlertDialogTitle>
-            <AlertDialogDescription>
-              {aiReminder}
-            </AlertDialogDescription>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" /> AI Assistant
+            </AlertDialogTitle>
+            <AlertDialogDescription>{aiReminder}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setAiReminder(null)}>Got it!</AlertDialogAction>
+            <AlertDialogAction onClick={() => setAiReminder(null)}>
+              Got it!
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
   );
 }
-
-    

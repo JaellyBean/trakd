@@ -52,7 +52,7 @@ export function MapView() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [members, setMembers] = useState<TrakdUser[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isGroupsLoading, setIsGroupsLoading] = useState(true);
   const { toast } = useToast();
 
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -64,20 +64,21 @@ export function MapView() {
   );
   
   const mapCenter = useMemo(() => {
-    if (members.length > 0 && members[0].location) {
-        return { lat: members[0].location.latitude, lng: members[0].location.longitude };
-    }
     if (trakdUser?.location) {
         return { lat: trakdUser.location.latitude, lng: trakdUser.location.longitude };
     }
-    return { lat: 37.7749, lng: -122.4194 }; // Default to San Francisco
-  }, [members, trakdUser]);
+    // Default to San Francisco if no user location is available
+    return { lat: 37.7749, lng: -122.4194 }; 
+  }, [trakdUser]);
 
   // Fetch user's groups
   useEffect(() => {
-    if (!trakdUser?.uid) return;
+    if (!trakdUser?.uid) {
+        setIsGroupsLoading(false);
+        return;
+    };
 
-    setIsLoading(true);
+    setIsGroupsLoading(true);
     const q = query(
       collection(db, 'groups'),
       where('members', 'array-contains', trakdUser.uid)
@@ -89,25 +90,32 @@ export function MapView() {
       setGroups(userGroups);
       if (userGroups.length > 0 && !selectedGroupId) {
         setSelectedGroupId(userGroups[0].id);
+      } else if (userGroups.length === 0) {
+        setSelectedGroupId(null);
       }
-      setIsLoading(false);
+      setIsGroupsLoading(false);
     }, (error) => {
         console.error("Error fetching groups: ", error);
-        setIsLoading(false);
+        setIsGroupsLoading(false);
     });
     return () => unsubscribe();
   }, [trakdUser?.uid, selectedGroupId]);
 
-  // Fetch members of selected group
+  // Fetch members of selected group or just the user
   useEffect(() => {
+    if (!trakdUser) {
+        setMembers([]);
+        return;
+    }
+
     if (!selectedGroupId) {
-      setMembers(trakdUser ? [trakdUser] : []);
+      setMembers([trakdUser]);
       return;
     };
 
     const group = groups.find(g => g.id === selectedGroupId);
     if (!group || group.members.length === 0) {
-        setMembers(trakdUser ? [trakdUser] : []);
+        setMembers([trakdUser]);
         return;
     }
 
@@ -120,6 +128,9 @@ export function MapView() {
         (doc) => doc.data() as TrakdUser
       );
       setMembers(groupMembers);
+    }, (error) => {
+        console.error("Error fetching group members:", error);
+        setMembers([trakdUser]); // Fallback to just showing the current user
     });
 
     return () => unsubscribe();
@@ -224,25 +235,13 @@ export function MapView() {
   };
 
 
-  if (!user) {
+  if (!user || !trakdUser) {
     return (
       <div className="flex h-full w-full items-center justify-center">
         <LoaderCircle className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
-
-  if (isLoading) {
-    return (
-        <div className="relative h-full w-full">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
-                <LoaderCircle className="h-8 w-8 animate-spin text-primary" />
-            </div>
-            <div className="h-full w-full bg-muted blur-sm"></div>
-      </div>
-    );
-  }
-
 
   return (
     <div className="relative h-full w-full">
@@ -271,7 +270,7 @@ export function MapView() {
         </Map>
       </APIProvider>
       <div className="absolute top-4 left-4 flex gap-4">
-        {groups.length > 0 && (
+        {!isGroupsLoading && groups.length > 0 && (
             <Select
             value={selectedGroupId || ''}
             onValueChange={(val) => setSelectedGroupId(val)}
@@ -300,7 +299,7 @@ export function MapView() {
         )}
       </div>
 
-      {groups.length === 0 && !isLoading && (
+      {!isGroupsLoading && groups.length === 0 && (
         <div className="absolute top-4 left-4 right-4">
             <div className="bg-background/80 backdrop-blur-sm shadow-lg rounded-lg p-4 text-center">
                 <Users className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
